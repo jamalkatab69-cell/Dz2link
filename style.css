@@ -1,127 +1,55 @@
-:root {
-  --ink: #f4f7ff;
-  --cyan: #3ee6ff;
-  --coral: #ff6b35;
-  --panel: rgba(6, 8, 18, 0.78);
-}
+:root { --c: hsl(185 100% 55%); --cs: hsl(185 100% 55% / .55); }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body {
-  margin: 0;
-  height: 100%;
-  overflow: hidden;
-  background: #000;
-  color: var(--ink);
+  margin: 0; height: 100%; overflow: hidden; background: #000; color: #fff;
   font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans Arabic", Tahoma, sans-serif;
-  /* منع التمرير والتكبير أثناء اللمس */
-  touch-action: none;
-  overscroll-behavior: none;
-  user-select: none;
-  -webkit-user-select: none;
+  touch-action: none; overscroll-behavior: none;
+  user-select: none; -webkit-user-select: none;
 }
 
-/* الفيديو يملأ الشاشة كاملة */
-.bg {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  z-index: 0;
-}
+#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
-#game {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1;
+/* الرقم الكبير في أعلى الشاشة */
+.score {
+  position: fixed; top: max(18px, env(safe-area-inset-top)); left: 0; right: 0;
+  text-align: center; pointer-events: none;
+  font-size: clamp(44px, 11vw, 72px); font-weight: 800; letter-spacing: .08em;
+  font-variant-numeric: tabular-nums; direction: ltr;
+  color: #fff; text-shadow: 0 0 18px var(--cs), 0 0 2px var(--c);
 }
+.gems {
+  position: fixed; top: max(24px, env(safe-area-inset-top)); right: 18px; pointer-events: none;
+  font-size: 18px; font-weight: 700; direction: ltr; opacity: .9;
+}
+.gems::before {
+  content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 8px; vertical-align: -1px;
+  background: #fff; clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%);
+}
+.score[hidden], .gems[hidden] { display: none; }
 
-/* شريط التقدم */
-.hud {
-  position: fixed;
-  top: max(14px, env(safe-area-inset-top));
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(78vw, 420px);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  z-index: 2;
-  pointer-events: none;
-  direction: ltr;
-}
-.hud[hidden] { display: none; }
-.bar {
-  flex: 1;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.18);
-  overflow: hidden;
-}
-.bar i {
-  display: block;
-  height: 100%;
-  width: 0%;
-  background: var(--cyan);
-  box-shadow: 0 0 10px var(--cyan);
-}
-#pct { font-size: 13px; min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
-
-/* الشاشات */
+/* الشاشات فوق مشهد اللعبة */
 .screen {
-  position: fixed;
-  inset: 0;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 24px;
-  text-align: center;
-  background: var(--panel);
-  backdrop-filter: blur(3px);
+  position: fixed; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  padding: 24px; text-align: center; cursor: pointer;
+  background: radial-gradient(ellipse at 50% 55%, rgba(0,0,0,.35), rgba(0,0,0,.78));
+  backdrop-filter: blur(2.5px); -webkit-backdrop-filter: blur(2.5px);
 }
 .screen[hidden] { display: none; }
 
-.screen h1 {
-  margin: 0;
-  font-size: clamp(64px, 18vw, 120px);
-  font-weight: 800;
-  line-height: 1;
-  color: var(--cyan);
-  text-shadow: 0 0 28px rgba(62, 230, 255, 0.55);
+.logo {
+  font-size: clamp(84px, 24vw, 150px); font-weight: 900; line-height: 1;
+  color: var(--c); text-shadow: 0 0 34px var(--cs), 0 0 6px var(--c);
 }
-.screen h2 {
-  margin: 0;
-  font-size: clamp(28px, 7vw, 40px);
-  font-weight: 700;
-}
-.screen p {
-  margin: 0;
-  max-width: 30ch;
-  font-size: 17px;
-  line-height: 1.8;
-  opacity: 0.9;
-}
-.screen small { opacity: 0.65; font-size: 14px; min-height: 1em; }
+.hint { margin: 0; font-size: 17px; line-height: 1.9; opacity: .85; }
+.tap  { margin: 6px 0 0; font-size: 20px; font-weight: 700; animation: pulse 1.4s ease-in-out infinite; }
+small { opacity: .6; font-size: 14px; min-height: 1em; }
 
-.btn {
-  margin-top: 8px;
-  padding: 14px 44px;
-  font: inherit;
-  font-size: 20px;
-  font-weight: 700;
-  color: #07101a;
-  background: var(--cyan);
-  border: 0;
-  border-radius: 999px;
-  cursor: pointer;
-  box-shadow: 0 0 22px rgba(62, 230, 255, 0.45);
-  transition: transform 0.12s ease;
-}
-.btn:active { transform: scale(0.95); }
-.btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.verdict { font-size: clamp(26px, 7vw, 38px); font-weight: 800; color: var(--c); text-shadow: 0 0 20px var(--cs); }
+.final { font-size: clamp(96px, 28vw, 170px); font-weight: 900; line-height: 1; direction: ltr; text-shadow: 0 0 30px var(--cs); }
+.meta { display: flex; gap: 22px; font-size: 16px; opacity: .8; }
+
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .tap { animation: none; } }
