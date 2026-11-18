@@ -32,6 +32,9 @@
   let overReadyAt = 0;
   let menuReset = 0;
   let sparkT = 0;
+  let wormHist = [];            // سجل موضع الكرة العرضي، يتبعه جسم الدودة
+  let hopStart = -9;            // وقت بدء آخر قفزة (عند تبديل المسار)
+  let lastLane = 1;
   let clock = 0;
   const cam = { x: 0, y: CAM.height, z: -CAM.back, psi: 0 };
   const save = (k, v) => localStorage.setItem('abur-' + k, typeof v === 'string' ? v : JSON.stringify(v));
@@ -62,11 +65,12 @@
   ];
 
   // ---------- صور الكرات (من skins.js) ----------
-  const SKINS = (window.BALL_SKINS || []).map((k) => {
-    const img = new Image();
-    img.src = k.src;
-    return { ...k, img };
-  });
+  // كرات: الصورة نفسها تُرسم. ديدان: الرأس صورة، والجسم يُرسم ويتحرك (زحف + قفز).
+  const loadImg = (src) => { const i = new Image(); i.src = src; return i; };
+  const SKINS = [
+    ...(window.BALL_SKINS || []).map((k) => ({ ...k, kind: 'ball', img: loadImg(k.src) })),
+    ...(window.WORM_SKINS || []).map((k) => ({ ...k, kind: 'worm', img: loadImg(k.head) }))
+  ];
   const skinById = (id) => SKINS.find((k) => k.id === id) || null;
 
   // ---------- التحكم: لمسة واحدة تنقل الكرة إلى المسار الآخر ----------
@@ -101,8 +105,11 @@
     world = E.createWorld();
     player = E.createPlayer();
     particles = [];
-    hueC = 185;
+    hueC = store.road === 'auto' ? 185 : store.road;
     shake = 0;
+    wormHist = [];
+    hopStart = -9;
+    lastLane = player.lane;
     updateCamera(1, true);
   }
 
@@ -191,6 +198,7 @@
     for (const k of list) {
       const b = h('button', 'skin');
       b.type = 'button';
+      if (k.kind === 'worm') b.classList.add('worm');
       b.innerHTML = (k.src ? `<img src="${k.src}" alt="">` : '<i class="neon-ball"></i>') + `<span>${k.name}</span>`;
       b.addEventListener('click', () => {
         store.skin = k.id; localStorage.setItem('abur-skin', k.id);
@@ -498,6 +506,7 @@
     const r = (CFG.ballRadius * F) / pZ;
     ctx.globalAlpha = 1;
     const skin = skinById(store.skin);
+    if (skin && skin.kind === 'worm') { drawWorm(skin); return; }
     if (skin && skin.img.complete && skin.img.naturalWidth) {
       ctx.shadowColor = hsl(skin.hue, 100, 58);
       ctx.shadowBlur = 26 * DPR;
@@ -519,6 +528,80 @@
     ctx.beginPath();
     ctx.arc(pX, pY, r, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  // ---------- الدودة ----------
+  // جسم من حلقات يتبع مسار الرأس: موجة جانبية خفيفة + أقواس زحف تمشي على الجسم،
+  // وقفزة تنتقل من الرأس إلى الذيل عند تبديل المسار (الدودة "تتخطى" المثلث).
+  const WORM = { n: 7, gap: 0.25, r0: 0.25, r1: 0.13, hop: 0.8 };
+  const _wp = {};
+
+  function lateralAt(s) {
+    const a = wormHist;
+    for (let i = a.length - 1; i >= 0; i--) {
+      if (a[i].s <= s) {
+        const b = a[i + 1];
+        if (!b) return a[i].u;
+        return a[i].u + ((b.u - a[i].u) * (s - a[i].s)) / Math.max(1e-6, b.s - a[i].s);
+      }
+    }
+    return a.length ? a[0].u : player.u;
+  }
+
+  function drawWorm(skin) {
+    const n = WORM.n, segs = [];
+    const hopDur = 0.42 / Math.sqrt(Math.max(1, player.v / CFG.speedStart));
+    let head = null;
+    for (let i = 0; i < n; i++) {
+      const sI = player.s - i * WORM.gap;
+      E.pointAt(world, sI, _wp);
+      const u = i === 0 ? player.u : lateralAt(sI) + Math.sin(clock * 9 - i * 0.9) * 0.08 * Math.min(1, i * 0.4);
+      const wx = _wp.x + Math.cos(_wp.th) * u, wz = _wp.z - Math.sin(_wp.th) * u;
+      const rad = WORM.r0 + (WORM.r1 - WORM.r0) * (i / (n - 1));
+      let y = rad + Math.max(0, Math.sin(clock * 11 - i * 0.85)) * 0.11;
+      const t = (clock - hopStart - i * 0.05) / hopDur;
+      if (t > 0 && t < 1) y += Math.sin(Math.PI * t) * WORM.hop;
+      proj(wx, y, wz);
+      segs.push({ x: pX, y: pY, z: pZ, r: rad });
+      if (i === 0) { proj(wx, y + 0.35, wz); head = { x: pX, y: pY, z: pZ }; }
+    }
+
+    // الحدّ الأبيض (مثل الملصق) + توهج خفيف
+    ctx.shadowColor = hsl(skin.hue, 100, 58);
+    ctx.shadowBlur = 22 * DPR;
+    ctx.fillStyle = '#fff';
+    for (let i = n - 1; i >= 0; i--) {
+      const sg = segs[i], r = ((sg.r + 0.04) * F) / sg.z;
+      ctx.beginPath(); ctx.arc(sg.x, sg.y, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // الجسم: من الذيل إلى الرأس
+    ctx.lineCap = 'round';
+    for (let i = n - 1; i >= 0; i--) {
+      const sg = segs[i], r = (sg.r * F) / sg.z;
+      ctx.fillStyle = skin.colors[i < 2 ? 0 : 1];
+      ctx.beginPath(); ctx.arc(sg.x, sg.y, r, 0, Math.PI * 2); ctx.fill();
+      if (i > 0) {
+        ctx.strokeStyle = skin.stripe;
+        ctx.lineWidth = Math.max(1, r * 0.16);
+        ctx.beginPath();
+        ctx.ellipse(sg.x, sg.y - r * 0.3, r * 0.78, r * 0.32, 0, 0.12 * Math.PI, 0.88 * Math.PI);
+        ctx.stroke();
+      }
+    }
+
+    // الرأس (صورة) يميل باتجاه حركة التبديل
+    const img = skin.img;
+    if (img.complete && img.naturalWidth) {
+      const sw = (skin.headW * F) / head.z, sh = (sw * img.naturalHeight) / img.naturalWidth;
+      const tilt = Math.max(-0.35, Math.min(0.35, (player.lane * CFG.laneOffset - player.u) * 0.5));
+      ctx.save();
+      ctx.translate(head.x, head.y);
+      ctx.rotate(tilt);
+      ctx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
+      ctx.restore();
+    }
   }
 
   // ---------- جسيمات ----------
@@ -597,6 +680,13 @@
         menuReset += dt;
         if (menuReset > 1.1) { newRun(); menuReset = 0; }
       }
+    }
+
+    // سجل الدودة + قفزة عند تبديل المسار
+    if (player.state === 'run') {
+      if (player.lane !== lastLane) { lastLane = player.lane; hopStart = clock; }
+      wormHist.push({ s: player.s, u: player.u });
+      while (wormHist.length > 2 && wormHist[1].s < player.s - 6) wormHist.shift();
     }
 
     // ظهور جسيمات خلف الكرة أثناء الجري
