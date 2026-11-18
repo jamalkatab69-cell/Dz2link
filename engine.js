@@ -1,6 +1,8 @@
 /* ==========================================================
    engine.js — منطق اللعبة فقط (بدون رسم وبدون DOM)
-   الطريق والمثلثات ثابتة في العالم، والكرة هي التي تجري.
+   - الطريق مسارين: أيمن وأيسر. الكرة لا تخرج من الطريق أبدًا.
+   - لمسة واحدة تنقل الكرة من مسار إلى الآخر.
+   - الطريق والمثلثات ثابتة، والكرة هي التي تجري.
    ========================================================== */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -10,20 +12,20 @@
 
   const CFG = {
     DS: 0.5,              // المسافة بين نقاط الطريق
-    halfWidth: 1.5,       // نصف عرض الطريق
+    halfWidth: 1.5,       // نصف عرض الطريق (كل مسار عرضه 1.5)
+    laneOffset: 0.75,     // بعد مركز كل مسار عن منتصف الطريق
+    laneSmooth: 13,       // سرعة الانتقال بين المسارين
     ballRadius: 0.4,
-    turnRate: 1.7,        // سرعة دوران الكرة (راديان/ثانية) عند اللمس
-    turnSmooth: 12,
     speedStart: 9,
-    speedMax: 16,
-    speedRamp: 220,       // كل كم وحدة تزيد السرعة وحدة واحدة
-    safeStart: 60,        // طريق مستقيم بلا عوائق في البداية
+    speedMax: 15,
+    speedRamp: 240,       // كل كم وحدة تزيد السرعة وحدة واحدة
+    safeStart: 60,        // طريق بلا مثلثات في البداية
     spikeRadius: 0.7,     // نصف قطر المثلث للاصطدام
     spikeHeight: 2.3,
-    spikeHalfWidth: 0.75,
+    spikeHalfWidth: 0.68,
     spikeThickness: 0.17,
-    edgeTolerance: 0.08,  // سماح بسيط قبل السقوط من الحافة
-    lookAhead: 170        // كم نولّد من الطريق أمام الكرة
+    lookAhead: 170,       // كم نولّد من الطريق أمام الكرة
+    colorEvery: 15        // يتغير اللون كل 15 مثلثًا
   };
 
   function mulberry32(a) {
@@ -35,8 +37,8 @@
     };
   }
 
-  const kMax = (s) => 0.028 + 0.062 * Math.min(1, s / 1800);
-  const spacing = (s) => Math.max(11, 19 - s / 190);
+  const kMax = (s) => 0.028 + 0.05 * Math.min(1, s / 1800);
+  const spacing = (s) => Math.max(13, 20 - s / 200);
   const speedAt = (s) => CFG.speedStart + Math.min(CFG.speedMax - CFG.speedStart, s / CFG.speedRamp);
 
   /* ---------- بناء الطريق (يتولد تدريجيًا وبعدها لا يتغير) ---------- */
@@ -45,7 +47,7 @@
       rng: mulberry32(seed || (Math.random() * 1e9) | 0),
       x: [], z: [], th: [],
       obs: [], gems: [],
-      len: 0,                 // عدد النقاط
+      len: 0,
       g: { x: 0, z: 0, th: 0, k: 0, kt: 0, seg: 0, nextObs: CFG.safeStart, side: 0, count: 0 }
     };
     w.g.side = w.rng() < 0.5 ? -1 : 1;
@@ -73,27 +75,24 @@
       g.x += Math.sin(g.th) * DS;
       g.z += Math.cos(g.th) * DS;
 
-      // مثلث جديد: يمين ثم يسار بالتناوب
+      // مثلث جديد: يمين ثم يسار بالتناوب (كل مثلث يسد مسارًا واحدًا)
       if (s >= g.nextObs) {
         g.side = -g.side;
         g.count++;
-        const u = g.side * (0.55 + w.rng() * 0.25);
-        const delta = g.side * (0.35 + w.rng() * 0.3);
-        const ang = w.th[i] + delta;
+        const u = g.side * CFG.laneOffset;
+        const ang = w.th[i] + g.side * (0.3 + w.rng() * 0.3);
         const px = w.x[i] + Math.cos(w.th[i]) * u;
         const pz = w.z[i] - Math.sin(w.th[i]) * u;
         w.obs.push({ n: g.count, s, u, side: g.side, x: px, z: pz, ang, passed: false });
 
-        // جوهرة في الممر الحر بين مثلثين
+        // جوهرة في المسار الحر بين مثلثين
         const gap = spacing(s);
         if (w.rng() < 0.6) {
-          const gs = s + gap * 0.5;
-          w.gems.push({ s: gs, u: -g.side * (0.2 + w.rng() * 0.6), got: false, x: 0, z: 0, pending: true });
+          w.gems.push({ s: s + gap * 0.5, u: -g.side * CFG.laneOffset, got: false, x: 0, z: 0, pending: true });
         }
         g.nextObs = s + gap;
       }
     }
-    // احسب مواقع الجواهر بعد توفر نقاط الطريق
     for (const gm of w.gems) {
       if (!gm.pending) continue;
       const j = Math.round(gm.s / DS);
@@ -105,82 +104,79 @@
     }
   }
 
+  /* نقطة على منتصف الطريق عند المسافة s (مع تدرّج بين النقاط) */
+  function pointAt(w, s, out) {
+    out = out || {};
+    if (s <= 0) { out.x = 0; out.z = s; out.th = 0; return out; }
+    const f = s / CFG.DS;
+    let i = Math.floor(f);
+    if (i > w.len - 2) i = w.len - 2;
+    const t = Math.min(1, f - i);
+    out.x = w.x[i] + (w.x[i + 1] - w.x[i]) * t;
+    out.z = w.z[i] + (w.z[i + 1] - w.z[i]) * t;
+    out.th = w.th[i] + (w.th[i + 1] - w.th[i]) * t;
+    return out;
+  }
+
   /* ---------- اللاعب ---------- */
   function createPlayer() {
     return {
-      x: 0, z: 0, y: 0, vy: 0, phi: 0, omega: 0, v: CFG.speedStart,
-      idx: 0, u: 0, state: 'run', score: 0, gems: 0, time: 0
+      s: 0, idx: 0,
+      lane: 1,                    // المسار المطلوب: +1 أيمن، -1 أيسر
+      u: CFG.laneOffset,          // موضع الكرة الفعلي عرضيًا
+      x: CFG.laneOffset, z: 0, phi: 0,
+      v: CFG.speedStart, state: 'run', score: 0, gems: 0, time: 0
     };
   }
 
-  const wrap = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+  /* لمسة واحدة: انقل الكرة إلى المسار الآخر (أو إلى مسار محدد) */
+  function switchLane(p, lane) {
+    if (p.state !== 'run') return;
+    p.lane = lane === undefined ? -p.lane : lane;
+  }
 
-  function step(w, p, dt, steer) {
+  const _c = {};
+  function step(w, p, dt) {
     const events = [];
+    if (p.state !== 'run') return events;
     const DS = CFG.DS;
 
-    if (p.state === 'run') {
-      p.time += dt;
-      const target = steer * CFG.turnRate;
-      p.omega += (target - p.omega) * Math.min(1, CFG.turnSmooth * dt);
-      p.phi += p.omega * dt;
-      p.v = speedAt(p.idx * DS);
-      p.x += Math.sin(p.phi) * p.v * dt;
-      p.z += Math.cos(p.phi) * p.v * dt;
-    } else if (p.state === 'falling') {
-      p.vy -= 22 * dt;
-      p.y += p.vy * dt;
-      p.x += Math.sin(p.phi) * p.v * 0.7 * dt;
-      p.z += Math.cos(p.phi) * p.v * 0.7 * dt;
-      if (p.y < -9) { p.state = 'dead'; events.push('dead'); }
-      return events;
-    } else {
-      return events;
-    }
+    p.time += dt;
+    p.v = speedAt(p.s);
+    p.s += p.v * dt;
+    p.idx = Math.floor(p.s / DS);
+    genTo(w, p.s + CFG.lookAhead);
 
-    // أقرب نقطة على الطريق
-    let best = p.idx, bd = Infinity;
-    const lo = Math.max(0, p.idx - 6), hi = Math.min(w.len - 1, p.idx + 40);
-    for (let i = lo; i <= hi; i++) {
-      const dx = p.x - w.x[i], dz = p.z - w.z[i];
-      const d = dx * dx + dz * dz;
-      if (d < bd) { bd = d; best = i; }
-    }
-    p.idx = best;
-    p.u = (p.x - w.x[best]) * Math.cos(w.th[best]) - (p.z - w.z[best]) * Math.sin(w.th[best]);
-    const sBall = p.idx * DS;
-    genTo(w, sBall + CFG.lookAhead);
+    // الانتقال بين المسارين بنعومة، والكرة دائمًا فوق الطريق
+    p.u += (p.lane * CFG.laneOffset - p.u) * Math.min(1, CFG.laneSmooth * dt);
 
-    // سقوط من حافة الطريق
-    if (Math.abs(p.u) > CFG.halfWidth + CFG.edgeTolerance) {
-      p.state = 'falling';
-      p.vy = 0;
-      events.push('fall');
-      return events;
-    }
+    pointAt(w, p.s, _c);
+    p.phi = _c.th;
+    p.x = _c.x + Math.cos(_c.th) * p.u;
+    p.z = _c.z - Math.sin(_c.th) * p.u;
 
     // المثلثات
     for (const o of w.obs) {
-      if (o.s < sBall - 8) continue;
-      if (o.s > sBall + 8) break;
-      const d = Math.hypot(p.x - o.x, p.z - o.z);
-      if (d < CFG.spikeRadius + CFG.ballRadius * 0.85) {
+      if (o.s < p.s - 8) continue;
+      if (o.s > p.s + 8) break;
+      if (Math.hypot(p.x - o.x, p.z - o.z) < CFG.spikeRadius + CFG.ballRadius * 0.85) {
         p.state = 'crashed';
         events.push('crash');
         return events;
       }
-      if (!o.passed && sBall > o.s + 0.6) {
+      if (!o.passed && p.s > o.s + 0.6) {
         o.passed = true;
         p.score = o.n;
         events.push('pass');
+        if (o.n % CFG.colorEvery === 0) events.push('newcolor');
       }
     }
 
     // الجواهر
     for (const gm of w.gems) {
       if (gm.got || gm.pending) continue;
-      if (gm.s < sBall - 8) continue;
-      if (gm.s > sBall + 8) break;
+      if (gm.s < p.s - 8) continue;
+      if (gm.s > p.s + 8) break;
       if (Math.hypot(p.x - gm.x, p.z - gm.z) < 0.85) {
         gm.got = true;
         p.gems++;
@@ -191,24 +187,14 @@
   }
 
   /* ---------- لاعب آلي (للعرض في الخلفية وللاختبار) ---------- */
-  function botSteer(w, p) {
-    const DS = CFG.DS;
-    const sBall = p.idx * DS;
-    let uT = 0;
+  function botAct(w, p) {
+    let prev = null, next = null;
     for (const o of w.obs) {
-      if (o.s < sBall - 2.5) continue;
-      if (o.s - sBall < 20) uT = -o.side * 0.75;
-      break;
+      if (o.s <= p.s) prev = o; else { next = o; break; }
     }
-    const th = w.th[p.idx];
-    const rel = wrap(p.phi - th);
-    const want = Math.max(-0.4, Math.min(0.4, (uT - p.u) * 0.5));
-    // الطريق ينحني: نحتاج أيضًا أن نتبع تغيّر اتجاهه
-    const iA = Math.min(p.idx + 6, w.len - 1);
-    const follow = wrap(w.th[iA] - th);
-    const err = wrap(th + want + follow - p.phi);
-    return Math.abs(err) < 0.03 ? 0 : (err > 0 ? 1 : -1);
+    if (!next) return;
+    if (next.side === p.lane && next.s - p.s < 12 && (!prev || p.s - prev.s > 2.4)) switchLane(p);
   }
 
-  return { CFG, createWorld, createPlayer, step, botSteer, genTo };
+  return { CFG, createWorld, createPlayer, step, switchLane, botAct, pointAt, genTo };
 });
