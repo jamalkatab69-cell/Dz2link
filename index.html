@@ -30,6 +30,35 @@
     <p class="tap">المس للعب مجددًا</p>
   </section>
 
+  <!-- الأزرار السفلية -->
+  <nav class="dock" id="dock" aria-label="القائمة">
+    <button type="button" data-panel="account" aria-label="حسابي" title="حسابي">
+      <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+    </button>
+    <button type="button" data-panel="top" aria-label="المتصدرون" title="المتصدرون">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#FFC83D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>
+    </button>
+    <button type="button" data-panel="balls" aria-label="الكرات" title="الكرات">
+      <svg viewBox="0 0 24 24"><defs><radialGradient id="dkBall" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ff8be8"/><stop offset=".55" stop-color="#c13dff"/><stop offset="1" stop-color="#3b6bff"/></radialGradient></defs><circle cx="12" cy="12" r="10" fill="url(#dkBall)"/><ellipse cx="8.4" cy="7.6" rx="2.6" ry="1.7" fill="#fff" opacity=".85" transform="rotate(-30 8.4 7.6)"/></svg>
+    </button>
+    <button type="button" data-panel="roads" aria-label="الطرقات" title="الطرقات">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l5 18H4z"/><path d="M12 5.5v3M12 11v3M12 16.5v3" stroke="#FFC83D"/></svg>
+    </button>
+    <button type="button" data-panel="social" aria-label="مواقع التواصل" title="مواقع التواصل" data-icon="tg"></button>
+    <button type="button" data-panel="settings" aria-label="الإعدادات" title="الإعدادات">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </nav>
+
+  <!-- نافذة اللوحات -->
+  <div class="modal" id="modal" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+      <header><h2 id="mTitle"></h2><button type="button" id="mClose" aria-label="إغلاق">×</button></header>
+      <div id="mBody"></div>
+    </div>
+  </div>
+
+  <script src="skins.js"></script>
   <script src="engine.js"></script>
   <script src="game.js"></script>
 </body>
