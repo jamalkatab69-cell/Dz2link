@@ -17,8 +17,10 @@
     laneSmooth: 13,       // سرعة الانتقال بين المسارين
     ballRadius: 0.4,
     speedStart: 9,
-    speedMax: 15,
-    speedRamp: 240,       // كل كم وحدة تزيد السرعة وحدة واحدة
+    speedGrow: 0.2,       // كل دفعة تضاف 0.2× إلى السرعة (تراكميًا، بلا سقف)
+    speedEvery: 15,       // الدفعة تتكرر كل 15 مثلثًا
+    speedEase: 4,         // نعومة الانتقال إلى السرعة الجديدة
+    maxStepDist: 0.35,    // أقصى مسافة تقطعها الكرة في خطوة فحص واحدة (لمنع المرور من خلال المثلثات)
     safeStart: 60,        // طريق بلا مثلثات في البداية
     spikeRadius: 0.7,     // نصف قطر المثلث للاصطدام
     spikeHeight: 2.3,
@@ -39,7 +41,8 @@
 
   const kMax = (s) => 0.028 + 0.05 * Math.min(1, s / 1800);
   const spacing = (s) => Math.max(13, 20 - s / 200);
-  const speedAt = (s) => CFG.speedStart + Math.min(CFG.speedMax - CFG.speedStart, s / CFG.speedRamp);
+  // السرعة تتضاعف ×1.2 كل 15 مثلثًا إلى ما لا نهاية
+  const speedAt = (score) => CFG.speedStart * Math.pow(1 + CFG.speedGrow, Math.floor(score / CFG.speedEvery));
 
   /* ---------- بناء الطريق (يتولد تدريجيًا وبعدها لا يتغير) ---------- */
   function createWorld(seed) {
@@ -121,7 +124,7 @@
   /* ---------- اللاعب ---------- */
   function createPlayer() {
     return {
-      s: 0, idx: 0,
+      s: 0, idx: 0, oi: 0, gi: 0,
       lane: 1,                    // المسار المطلوب: +1 أيمن، -1 أيسر
       u: CFG.laneOffset,          // موضع الكرة الفعلي عرضيًا
       x: CFG.laneOffset, z: 0, phi: 0,
@@ -135,20 +138,35 @@
     p.lane = lane === undefined ? -p.lane : lane;
   }
 
-  const _c = {};
+  /* الإطار الواحد يُقسَّم إلى خطوات صغيرة، حتى لا تخترق الكرة السريعة المثلثات */
   function step(w, p, dt) {
     const events = [];
     if (p.state !== 'run') return events;
+
+    const target = speedAt(p.score);
+    p.v += (target - p.v) * Math.min(1, CFG.speedEase * dt);
+    genTo(w, p.s + p.v * dt + CFG.lookAhead);
+
+    const n = Math.min(400, Math.max(1, Math.ceil((p.v * dt) / CFG.maxStepDist)));
+    const h = dt / n;
+    for (let i = 0; i < n; i++) {
+      const ev = stepOnce(w, p, h, events);
+      if (p.state !== 'run') break;
+    }
+    return events;
+  }
+
+  const _c = {};
+  function stepOnce(w, p, dt, events) {
     const DS = CFG.DS;
 
     p.time += dt;
-    p.v = speedAt(p.s);
     p.s += p.v * dt;
     p.idx = Math.floor(p.s / DS);
-    genTo(w, p.s + CFG.lookAhead);
 
-    // الانتقال بين المسارين بنعومة، والكرة دائمًا فوق الطريق
-    p.u += (p.lane * CFG.laneOffset - p.u) * Math.min(1, CFG.laneSmooth * dt);
+    // الانتقال بين المسارين بنعومة (يتسارع مع السرعة كي يبقى التحكم ممكنًا)
+    const laneK = CFG.laneSmooth * Math.max(1, p.v / CFG.speedStart);
+    p.u += (p.lane * CFG.laneOffset - p.u) * Math.min(1, laneK * dt);
 
     pointAt(w, p.s, _c);
     p.phi = _c.th;
@@ -156,13 +174,14 @@
     p.z = _c.z - Math.sin(_c.th) * p.u;
 
     // المثلثات
-    for (const o of w.obs) {
-      if (o.s < p.s - 8) continue;
+    while (p.oi < w.obs.length && w.obs[p.oi].s < p.s - 8) p.oi++;
+    for (let i = p.oi; i < w.obs.length; i++) {
+      const o = w.obs[i];
       if (o.s > p.s + 8) break;
       if (Math.hypot(p.x - o.x, p.z - o.z) < CFG.spikeRadius + CFG.ballRadius * 0.85) {
         p.state = 'crashed';
         events.push('crash');
-        return events;
+        return;
       }
       if (!o.passed && p.s > o.s + 0.6) {
         o.passed = true;
@@ -173,9 +192,10 @@
     }
 
     // الجواهر
-    for (const gm of w.gems) {
+    while (p.gi < w.gems.length && w.gems[p.gi].s < p.s - 8) p.gi++;
+    for (let i = p.gi; i < w.gems.length; i++) {
+      const gm = w.gems[i];
       if (gm.got || gm.pending) continue;
-      if (gm.s < p.s - 8) continue;
       if (gm.s > p.s + 8) break;
       if (Math.hypot(p.x - gm.x, p.z - gm.z) < 0.85) {
         gm.got = true;
@@ -183,7 +203,6 @@
         events.push('gem');
       }
     }
-    return events;
   }
 
   /* ---------- لاعب آلي (للعرض في الخلفية وللاختبار) ---------- */
