@@ -127,3 +127,5 @@ a.btn { color: #fff; background: rgba(255,255,255,.08); }
 .sw:checked { background: var(--c); }
 .sw:checked::after { transform: translateX(-20px); }
 @media (prefers-reduced-motion: reduce) { .dock button, .sw, .sw::after { transition: none; } }
+
+.skin.worm img { width: auto; height: 62px; max-width: 100%; object-fit: contain; }
