@@ -39,39 +39,26 @@
     gems: Number(localStorage.getItem('abur-gems')) || 0
   };
 
-  // ---------- التحكم ----------
+  // ---------- التحكم: لمسة واحدة تنقل الكرة إلى المسار الآخر ----------
   const debug = { auto: false };
-  const pointers = new Map();
-  const keys = { left: false, right: false };
-  function steerInput() {
-    let l = keys.left, r = keys.right;
-    pointers.forEach((side) => (side < 0 ? (l = true) : (r = true)));
-    return (r ? 1 : 0) - (l ? 1 : 0);
+  function tapLane() {
+    if (mode === 'play') E.switchLane(player);
   }
-  window.addEventListener('pointerdown', (e) => {
-    if (mode === 'play') pointers.set(e.pointerId, e.clientX < W / 2 ? -1 : 1);
-  });
-  window.addEventListener('pointermove', (e) => {
-    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, e.clientX < W / 2 ? -1 : 1);
-  });
-  const lift = (e) => pointers.delete(e.pointerId);
-  window.addEventListener('pointerup', lift);
-  window.addEventListener('pointercancel', lift);
+  window.addEventListener('pointerdown', () => tapLane());
   window.addEventListener('contextmenu', (e) => e.preventDefault());
 
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
-    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
-    if ((e.key === ' ' || e.key === 'Enter') && mode !== 'play') pressStart();
-  });
-  window.addEventListener('keyup', (e) => {
-    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
-    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+    if (e.repeat) return;
+    if ((e.key === ' ' || e.key === 'Enter') && mode !== 'play') { pressStart(); return; }
+    if (mode !== 'play') return;
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') E.switchLane(player, -1);
+    else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') E.switchLane(player, 1);
+    else if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'ArrowDown') E.switchLane(player);
   });
 
   // لمس الشاشات يبدأ اللعب
-  $('screenStart').addEventListener('pointerdown', () => pressStart());
-  $('screenOver').addEventListener('pointerdown', () => pressStart());
+  $('screenStart').addEventListener('pointerdown', (e) => { e.stopPropagation(); pressStart(); });
+  $('screenOver').addEventListener('pointerdown', (e) => { e.stopPropagation(); pressStart(); });
 
   function pressStart() {
     if (mode === 'over' && clock < overReadyAt) return; // منع الضغط بالخطأ
@@ -85,15 +72,12 @@
     particles = [];
     hueC = 185;
     shake = 0;
-    cam.psi = 0;
-    cam.x = -Math.sin(0) * CAM.back;
-    cam.z = -CAM.back;
+    updateCamera(1, true);
   }
 
   function startGame() {
     newRun();
     mode = 'play';
-    pointers.clear();
     $('screenStart').hidden = true;
     $('screenOver').hidden = true;
     scoreEl.hidden = false;
@@ -253,7 +237,7 @@
       drawList.push({ z: pZ, x: pX, y: pY, t: 'part', p });
     }
     if (player.state !== 'crashed') {
-      proj(player.x, CFG.ballRadius + player.y, player.z);
+      proj(player.x, CFG.ballRadius, player.z);
       drawList.push({ z: pZ, x: pX, y: pY, t: 'ball' });
     }
     drawList.sort((a, b) => b.z - a.z);
@@ -355,6 +339,7 @@
 
   function drawBall(d, h) {
     const pX = d.x, pY = d.y, pZ = d.z;
+    if (!(pZ > 0.3)) return;
     const r = (CFG.ballRadius * F) / pZ;
     ctx.globalAlpha = 1;
     ctx.shadowColor = hsl(h, 100, 55);
@@ -398,6 +383,21 @@
     particles = particles.filter((p) => p.life > 0);
   }
 
+  // الكاميرا تتبع منتصف الطريق خلف الكرة، فتظهر الكرة وهي تنتقل بين المسارين
+  const _a = {}, _b = {};
+  function updateCamera(dt, snap) {
+    E.pointAt(world, player.s, _a);
+    E.pointAt(world, player.s - CAM.back, _b);
+    if (snap) cam.psi = _a.th;
+    else cam.psi += (_a.th - cam.psi) * Math.min(1, CAM.follow * dt);
+    const lat = player.u * 0.3;
+    cam.x = _b.x + Math.cos(_b.th) * lat;
+    cam.z = _b.z - Math.sin(_b.th) * lat;
+    cam.y = CAM.height;
+    cP = Math.cos(cam.psi);
+    sP = Math.sin(cam.psi);
+  }
+
   // ---------- تحديث ----------
   function handleEvents(events) {
     for (const ev of events) {
@@ -412,10 +412,6 @@
         shake = 0.5;
         if (navigator.vibrate) navigator.vibrate(90);
         overTimer = 0.65;
-      } else if (ev === 'fall') {
-        if (navigator.vibrate) navigator.vibrate(40);
-      } else if (ev === 'dead') {
-        finish();
       }
     }
   }
@@ -424,20 +420,20 @@
     clock += dt;
 
     if (mode === 'play') {
-      handleEvents(E.step(world, player, dt, debug.auto ? E.botSteer(world, player) : steerInput()));
+      if (debug.auto) E.botAct(world, player);
+      handleEvents(E.step(world, player, dt));
       if (player.state === 'crashed' && overTimer > 0) {
         overTimer -= dt;
         if (overTimer <= 0) finish();
       }
     } else if (mode === 'menu') {
       // لاعب آلي يعرض اللعبة خلف شاشة البداية
-      E.step(world, player, dt, E.botSteer(world, player));
+      E.botAct(world, player);
+      E.step(world, player, dt);
       if (player.state !== 'run') {
         menuReset += dt;
         if (menuReset > 1.1) { newRun(); menuReset = 0; }
       }
-    } else {
-      E.step(world, player, dt, 0); // استمرار السقوط
     }
 
     // ظهور جسيمات خلف الكرة أثناء الجري
@@ -455,21 +451,14 @@
     }
     updateParticles(dt);
 
-    // لون النيون يتبع التقدم
-    const hueT = 185 + player.score * 3.5;
-    hueC += (hueT - hueC) * Math.min(1, dt * 1.6);
+    // لون جديد كل 15 مثلثًا (خطوة 45 درجة على دائرة الألوان)
+    const level = Math.floor(player.score / CFG.colorEvery);
+    const hueT = 185 + level * 45;
+    hueC += (hueT - hueC) * Math.min(1, dt * 2.4);
     rootStyle.setProperty('--c', hsl(hueC, 100, 58));
     rootStyle.setProperty('--cs', hsl(hueC, 100, 58, 0.55));
 
-    // الكاميرا تلحق بالكرة
-    if (player.state === 'run') {
-      cam.psi += (player.phi - cam.psi) * Math.min(1, CAM.follow * dt);
-      cam.x = player.x - Math.sin(cam.psi) * CAM.back;
-      cam.z = player.z - Math.cos(cam.psi) * CAM.back;
-    }
-    cam.y = CAM.height;
-    cP = Math.cos(cam.psi);
-    sP = Math.sin(cam.psi);
+    if (player.state === 'run') updateCamera(dt, false);
 
     shake = Math.max(0, shake - dt * 1.6);
     shX = (Math.random() - 0.5) * shake * 26;
@@ -488,11 +477,11 @@
 
   let last = performance.now();
   function frame(now) {
+    requestAnimationFrame(frame); // الحلقة لا تتوقف حتى لو حدث خطأ في إطار واحد
     const dt = Math.min(0.05, (now - last) / 1000 || 0);
     last = now;
     update(dt);
     draw();
-    requestAnimationFrame(frame);
   }
 
   // ---------- تشغيل ----------
