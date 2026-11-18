@@ -32,8 +32,8 @@
   let overReadyAt = 0;
   let menuReset = 0;
   let sparkT = 0;
-  let wormHist = [];            // سجل موضع الكرة العرضي، يتبعه جسم الدودة
-  let hopStart = -9;            // وقت بدء آخر قفزة (عند تبديل المسار)
+  // فيزياء الكرة (بصرية): قفزة بجاذبية حقيقية + ارتداد + انضغاط، ودوران كامل أثناء الجري
+  const ball = { y: 0, vy: 0, sq: 0, sqv: 0, roll: 0, tilt: 0, lastU: 0 };
   let lastLane = 1;
   let clock = 0;
   const cam = { x: 0, y: CAM.height, z: -CAM.back, psi: 0 };
@@ -43,7 +43,6 @@
     best: Number(localStorage.getItem('abur-best')) || 0,
     gems: Number(localStorage.getItem('abur-gems')) || 0,
     skin: localStorage.getItem('abur-skin') || 'neon',   // neon = الكرة الأصلية
-    road: load('road', 'auto'),                          // auto = يتغير اللون كل 15 مثلثًا
     vib: load('vib', true),
     top: load('top', [])
   };
@@ -53,24 +52,13 @@
     { name: 'تيليغرام', url: 'https://t.me/', icon: 'tg' }
   ];
 
-  // ألوان الطرق
-  const ROADS = [
-    { id: 'auto', name: 'تلقائي', hue: null },
-    { id: 185, name: 'سماوي', hue: 185 },
-    { id: 320, name: 'وردي', hue: 320 },
-    { id: 130, name: 'أخضر', hue: 130 },
-    { id: 45, name: 'ذهبي', hue: 45 },
-    { id: 0, name: 'أحمر', hue: 0 },
-    { id: 270, name: 'بنفسجي', hue: 270 }
-  ];
-
-  // ---------- صور الكرات (من skins.js) ----------
-  // كرات: الصورة نفسها تُرسم. ديدان: الرأس صورة، والجسم يُرسم ويتحرك (زحف + قفز).
-  const loadImg = (src) => { const i = new Image(); i.src = src; return i; };
-  const SKINS = [
-    ...(window.BALL_SKINS || []).map((k) => ({ ...k, kind: 'ball', img: loadImg(k.src) })),
-    ...(window.WORM_SKINS || []).map((k) => ({ ...k, kind: 'worm', img: loadImg(k.head) }))
-  ];
+  // ---------- شخصيات الكرات (من skins.js) ----------
+  // كل صورة تُلفّ حول كرة وتدور 360° أثناء الجري
+  const SKINS = (window.CHAR_SKINS || []).map((k) => {
+    const img = new Image();
+    img.src = k.src;
+    return { ...k, img, tex: null };
+  });
   const skinById = (id) => SKINS.find((k) => k.id === id) || null;
 
   // ---------- التحكم: لمسة واحدة تنقل الكرة إلى المسار الآخر ----------
@@ -105,11 +93,10 @@
     world = E.createWorld();
     player = E.createPlayer();
     particles = [];
-    hueC = store.road === 'auto' ? 185 : store.road;
+    hueC = 185;
     shake = 0;
-    wormHist = [];
-    hopStart = -9;
     lastLane = player.lane;
+    ball.y = 0; ball.vy = 0; ball.sq = 0; ball.sqv = 0; ball.roll = 0; ball.tilt = 0; ball.lastU = player.u;
     updateCamera(1, true);
   }
 
@@ -193,12 +180,11 @@
 
   function renderSkins(box) {
     const grid = h('div', 'skins');
-    const list = [{ id: 'neon', name: 'الأصلية', hue: 185, src: null }, ...SKINS];
+    const list = [{ id: 'neon', name: 'الأصلية', src: null }, ...SKINS];
     const cards = [];
     for (const k of list) {
       const b = h('button', 'skin');
       b.type = 'button';
-      if (k.kind === 'worm') b.classList.add('worm');
       b.innerHTML = (k.src ? `<img src="${k.src}" alt="">` : '<i class="neon-ball"></i>') + `<span>${k.name}</span>`;
       b.addEventListener('click', () => {
         store.skin = k.id; localStorage.setItem('abur-skin', k.id);
@@ -206,26 +192,6 @@
       });
       cards.push([b, k.id]);
       b.classList.toggle('on', store.skin === k.id);
-      grid.appendChild(b);
-    }
-    box.appendChild(grid);
-  }
-
-  function renderRoads(box) {
-    const grid = h('div', 'roads');
-    const cards = [];
-    for (const r of ROADS) {
-      const b = h('button', 'road');
-      b.type = 'button';
-      const sw = r.hue === null ? 'conic-gradient(from 0deg, #0ff, #f0f, #ff0, #0f0, #0ff)' : `hsl(${r.hue} 100% 58%)`;
-      b.innerHTML = `<i style="background:${sw}"></i><span>${r.name}</span>`;
-      b.addEventListener('click', () => {
-        store.road = r.id; save('road', r.id);
-        if (r.hue !== null) hueC = r.hue;
-        cards.forEach((c) => c[0].classList.toggle('on', c[1] === r.id));
-      });
-      cards.push([b, r.id]);
-      b.classList.toggle('on', store.road === r.id);
       grid.appendChild(b);
     }
     box.appendChild(grid);
@@ -247,7 +213,6 @@
       box.appendChild(h('p', 'note', 'هذه أفضل نتائجك على هذا الجهاز. الترتيب العالمي يحتاج خادمًا.'));
     } },
     balls: { title: 'الكرات', render(box) { renderSkins(box); } },
-    roads: { title: 'الطرقات', render(box) { renderRoads(box); } },
     social: { title: 'مواقع التواصل', render(box) {
       for (const l of LINKS) {
         const a = h('a', 'btn', `${ICONS[l.icon] || ''}<span>${l.name}</span>`);
@@ -258,8 +223,6 @@
     settings: { title: 'الإعدادات', render(box) {
       box.appendChild(h('h3', '', 'شكل الكرة'));
       renderSkins(box);
-      box.appendChild(h('h3', '', 'لون الطريق'));
-      renderRoads(box);
       const row = h('label', 'row', '<span>الاهتزاز عند الاصطدام</span><input type="checkbox" class="sw">');
       const cb = row.querySelector('input'); cb.checked = !!store.vib;
       cb.addEventListener('change', () => { store.vib = cb.checked; save('vib', cb.checked); });
@@ -400,8 +363,10 @@
       drawList.push({ z: pZ, x: pX, y: pY, t: 'part', p });
     }
     if (player.state !== 'crashed') {
-      proj(player.x, CFG.ballRadius, player.z);
-      drawList.push({ z: pZ, x: pX, y: pY, t: 'ball' });
+      proj(player.x, 0, player.z);
+      const gx = pX, gy = pY;
+      proj(player.x, CFG.ballRadius + ball.y, player.z);
+      drawList.push({ z: pZ, x: pX, y: pY, t: 'ball', gx, gy });
     }
     drawList.sort((a, b) => b.z - a.z);
   }
@@ -500,108 +465,145 @@
     ctx.fill();
   }
 
-  function drawBall(d, h) {
-    const pX = d.x, pY = d.y, pZ = d.z;
-    if (!(pZ > 0.3)) return;
-    const r = (CFG.ballRadius * F) / pZ;
-    ctx.globalAlpha = 1;
-    const skin = skinById(store.skin);
-    if (skin && skin.kind === 'worm') { drawWorm(skin); return; }
-    if (skin && skin.img.complete && skin.img.naturalWidth) {
-      ctx.shadowColor = hsl(skin.hue, 100, 58);
-      ctx.shadowBlur = 26 * DPR;
-      ctx.drawImage(skin.img, pX - r, pY - r, r * 2, r * 2);
-      ctx.shadowBlur = 0;
-      return;
+  // ---------- الكرة: فيزياء + كرة مغلّفة بصورة ----------
+  const BALL = { g: 28, bounce: 0.35 };
+
+  function updateBall(dt) {
+    const f = Math.max(1, player.v / CFG.speedStart);   // عامل السرعة
+    const g = BALL.g * f;
+    if (player.lane !== lastLane) {
+      lastLane = player.lane;
+      // قفزة زمنها = زمن عبور المسار، فالارتفاع g·T²/8 يبقى ثابتًا مهما زادت السرعة
+      ball.vy = (g * (0.42 / Math.sqrt(f))) / 2;
+      ball.sq = -0.14; ball.sqv = 0;                    // تمدّد لحظة الانطلاق
     }
-    ctx.shadowColor = hsl(h, 100, 55);
-    ctx.shadowBlur = 34 * DPR;
-    ctx.fillStyle = hsl(h, 100, 56);
-    ctx.beginPath();
-    ctx.arc(pX, pY, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    const g = ctx.createRadialGradient(pX - r * 0.35, pY - r * 0.4, r * 0.1, pX, pY, r);
-    g.addColorStop(0, hsl(h, 100, 82, 0.55));
-    g.addColorStop(1, hsl(h, 100, 50, 0));
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(pX, pY, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // ---------- الدودة ----------
-  // جسم من حلقات يتبع مسار الرأس: موجة جانبية خفيفة + أقواس زحف تمشي على الجسم،
-  // وقفزة تنتقل من الرأس إلى الذيل عند تبديل المسار (الدودة "تتخطى" المثلث).
-  const WORM = { n: 7, gap: 0.25, r0: 0.25, r1: 0.13, hop: 0.8 };
-  const _wp = {};
-
-  function lateralAt(s) {
-    const a = wormHist;
-    for (let i = a.length - 1; i >= 0; i--) {
-      if (a[i].s <= s) {
-        const b = a[i + 1];
-        if (!b) return a[i].u;
-        return a[i].u + ((b.u - a[i].u) * (s - a[i].s)) / Math.max(1e-6, b.s - a[i].s);
-      }
-    }
-    return a.length ? a[0].u : player.u;
-  }
-
-  function drawWorm(skin) {
-    const n = WORM.n, segs = [];
-    const hopDur = 0.42 / Math.sqrt(Math.max(1, player.v / CFG.speedStart));
-    let head = null;
+    const n = 4, hh = dt / n;
     for (let i = 0; i < n; i++) {
-      const sI = player.s - i * WORM.gap;
-      E.pointAt(world, sI, _wp);
-      const u = i === 0 ? player.u : lateralAt(sI) + Math.sin(clock * 9 - i * 0.9) * 0.08 * Math.min(1, i * 0.4);
-      const wx = _wp.x + Math.cos(_wp.th) * u, wz = _wp.z - Math.sin(_wp.th) * u;
-      const rad = WORM.r0 + (WORM.r1 - WORM.r0) * (i / (n - 1));
-      let y = rad + Math.max(0, Math.sin(clock * 11 - i * 0.85)) * 0.11;
-      const t = (clock - hopStart - i * 0.05) / hopDur;
-      if (t > 0 && t < 1) y += Math.sin(Math.PI * t) * WORM.hop;
-      proj(wx, y, wz);
-      segs.push({ x: pX, y: pY, z: pZ, r: rad });
-      if (i === 0) { proj(wx, y + 0.35, wz); head = { x: pX, y: pY, z: pZ }; }
+      ball.vy -= g * hh;
+      ball.y += ball.vy * hh;
+      if (ball.y <= 0) {
+        ball.y = 0;
+        const impact = -ball.vy / Math.sqrt(f);
+        if (impact > 0.7) {
+          ball.sq = Math.min(0.3, impact * 0.05); ball.sqv = 0;   // انضغاط عند الهبوط
+          ball.vy = -ball.vy * BALL.bounce;                          // ارتداد
+        } else ball.vy = 0;
+      }
+      ball.sqv += (-260 * ball.sq - 14 * ball.sqv) * hh;           // نابض الانضغاط
+      ball.sq += ball.sqv * hh;
     }
+    // الدوران: دورة كاملة تقريبًا كل ثانية، وميل خفيف مع الحركة الجانبية
+    ball.roll += Math.min(16, 6.5 * Math.sqrt(f)) * dt;
+    const lv = (player.u - ball.lastU) / Math.max(dt, 1e-4) / f;
+    ball.lastU = player.u;
+    const tgt = -Math.max(-0.5, Math.min(0.5, lv * 0.1));
+    ball.tilt += (tgt - ball.tilt) * Math.min(1, 12 * dt);
+  }
 
-    // الحدّ الأبيض (مثل الملصق) + توهج خفيف
-    ctx.shadowColor = hsl(skin.hue, 100, 58);
-    ctx.shadowBlur = 22 * DPR;
-    ctx.fillStyle = '#fff';
-    for (let i = n - 1; i >= 0; i--) {
-      const sg = segs[i], r = ((sg.r + 0.04) * F) / sg.z;
-      ctx.beginPath(); ctx.arc(sg.x, sg.y, r, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-
-    // الجسم: من الذيل إلى الرأس
-    ctx.lineCap = 'round';
-    for (let i = n - 1; i >= 0; i--) {
-      const sg = segs[i], r = (sg.r * F) / sg.z;
-      ctx.fillStyle = skin.colors[i < 2 ? 0 : 1];
-      ctx.beginPath(); ctx.arc(sg.x, sg.y, r, 0, Math.PI * 2); ctx.fill();
-      if (i > 0) {
-        ctx.strokeStyle = skin.stripe;
-        ctx.lineWidth = Math.max(1, r * 0.16);
-        ctx.beginPath();
-        ctx.ellipse(sg.x, sg.y - r * 0.3, r * 0.78, r * 0.32, 0, 0.12 * Math.PI, 0.88 * Math.PI);
-        ctx.stroke();
+  // مجسّم كرة بالبكسل: لكل بكسل نحسب موضعه على الكرة بعد الدوران ثم نأخذ لون الصورة
+  const SN = 144, TEX = 256, INV_PI = 1 / Math.PI;
+  const sph = (() => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = SN;
+    const c = cv.getContext('2d');
+    const img = c.createImageData(SN, SN);
+    const pix = [], nx = [], ny = [], nz = [], al = [];
+    for (let y = 0; y < SN; y++) {
+      for (let x = 0; x < SN; x++) {
+        const px = ((x + 0.5) / SN) * 2 - 1, py = 1 - ((y + 0.5) / SN) * 2;
+        const d2 = px * px + py * py, d = Math.sqrt(d2);
+        if (d > 1.03) continue;
+        pix.push(y * SN + x);
+        if (d >= 1) { nx.push(px / d); ny.push(py / d); nz.push(0); }
+        else { nx.push(px); ny.push(py); nz.push(Math.sqrt(1 - d2)); }
+        al.push(Math.round(255 * Math.max(0, Math.min(1, (1 - d) * (SN / 2) + 0.5))));
       }
     }
+    return { cv, c, img, u32: new Uint32Array(img.data.buffer), pix: Int32Array.from(pix),
+             nx: Float32Array.from(nx), ny: Float32Array.from(ny), nz: Float32Array.from(nz), al: Uint8Array.from(al) };
+  })();
 
-    // الرأس (صورة) يميل باتجاه حركة التبديل
-    const img = skin.img;
-    if (img.complete && img.naturalWidth) {
-      const sw = (skin.headW * F) / head.z, sh = (sw * img.naturalHeight) / img.naturalWidth;
-      const tilt = Math.max(-0.35, Math.min(0.35, (player.lane * CFG.laneOffset - player.u) * 0.5));
-      ctx.save();
-      ctx.translate(head.x, head.y);
-      ctx.rotate(tilt);
-      ctx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
-      ctx.restore();
+  function getTex(skin) {
+    if (skin.tex) return skin.tex;
+    const im = skin.img;
+    if (!(im.complete && im.naturalWidth)) return null;
+    const c = document.createElement('canvas');
+    c.width = c.height = TEX;
+    const x = c.getContext('2d');
+    x.drawImage(im, 0, 0, TEX, TEX);
+    skin.tex = new Uint32Array(x.getImageData(0, 0, TEX, TEX).data.buffer);
+    return skin.tex;
+  }
+
+  function renderSphere(tex, roll, tilt) {
+    const { u32, pix, nx, ny, nz, al } = sph;
+    const cT = Math.cos(roll), sT = Math.sin(roll), cF = Math.cos(tilt), sF = Math.sin(tilt);
+    for (let k = 0; k < pix.length; k++) {
+      const X = nx[k], Y = ny[k], Z = nz[k];
+      const y1 = Y * cT - Z * sT, z1 = Y * sT + Z * cT;          // عكس دوران الجري
+      const lx = X * cF + y1 * sF, ly = -X * sF + y1 * cF;        // عكس الميل
+      const lon = Math.atan2(lx, z1);
+      const lat = Math.asin(ly > 1 ? 1 : ly < -1 ? -1 : ly);
+      let u = 0.5 + lon * INV_PI;
+      if (u < 0) u = -u; else if (u > 1) u = 2 - u;                // الوجه الخلفي نسخة معكوسة، فلا تظهر درزة
+      const v = 0.5 - lat * INV_PI;
+      const c = tex[((v * (TEX - 1) + 0.5) | 0) * TEX + ((u * (TEX - 1) + 0.5) | 0)];
+      u32[pix[k]] = (c & 0x00ffffff) | (al[k] << 24);
     }
+    sph.c.putImageData(sph.img, 0, 0);
+  }
+
+  function drawBall(d, h) {
+    const bx = d.x, by = d.y, bz = d.z;
+    if (!(bz > 0.3)) return;
+    const r = (CFG.ballRadius * F) / bz;
+    ctx.globalAlpha = 1;
+
+    // ظل متوهج على الأرض يصغر ويخفت كلما ارتفعت الكرة
+    const lift = Math.min(1, ball.y / 0.8);
+    ctx.fillStyle = hsl(h, 100, 60, 0.38 * (1 - lift * 0.7));
+    ctx.beginPath();
+    ctx.ellipse(d.gx, d.gy, r * (1 - lift * 0.35), r * 0.34 * (1 - lift * 0.35), 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // انضغاط/تمدّد حول نقطة التماس مع الأرض
+    ctx.save();
+    ctx.translate(bx, by + r);
+    ctx.scale(1 + ball.sq * 0.6, 1 - ball.sq);
+    ctx.translate(-bx, -(by + r));
+
+    const skin = skinById(store.skin);
+    const tex = skin && getTex(skin);
+    if (tex) {
+      renderSphere(tex, ball.roll, ball.tilt);
+      ctx.shadowColor = hsl(h, 100, 58);
+      ctx.shadowBlur = 28 * DPR;
+      ctx.drawImage(sph.cv, bx - r, by - r, r * 2, r * 2);
+      ctx.shadowBlur = 0;
+      // إضاءة ثابتة فوق الصورة تعطي إحساس الكرة
+      const g = ctx.createRadialGradient(bx - r * 0.35, by - r * 0.4, r * 0.1, bx, by, r);
+      g.addColorStop(0, 'rgba(255,255,255,0.30)');
+      g.addColorStop(0.4, 'rgba(255,255,255,0)');
+      g.addColorStop(0.8, 'rgba(0,0,0,0.16)');
+      g.addColorStop(1, 'rgba(0,0,0,0.5)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.beginPath(); ctx.ellipse(bx - r * 0.4, by - r * 0.45, r * 0.17, r * 0.1, -0.7, 0, Math.PI * 2); ctx.fill();
+    } else {
+      // الكرة الأصلية (النيون)
+      ctx.shadowColor = hsl(h, 100, 55);
+      ctx.shadowBlur = 34 * DPR;
+      ctx.fillStyle = hsl(h, 100, 56);
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      const g = ctx.createRadialGradient(bx - r * 0.35, by - r * 0.4, r * 0.1, bx, by, r);
+      g.addColorStop(0, hsl(h, 100, 82, 0.55));
+      g.addColorStop(1, hsl(h, 100, 50, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
   }
 
   // ---------- جسيمات ----------
@@ -682,12 +684,7 @@
       }
     }
 
-    // سجل الدودة + قفزة عند تبديل المسار
-    if (player.state === 'run') {
-      if (player.lane !== lastLane) { lastLane = player.lane; hopStart = clock; }
-      wormHist.push({ s: player.s, u: player.u });
-      while (wormHist.length > 2 && wormHist[1].s < player.s - 6) wormHist.shift();
-    }
+    if (player.state === 'run') updateBall(dt);
 
     // ظهور جسيمات خلف الكرة أثناء الجري
     if (player.state === 'run') {
@@ -706,7 +703,7 @@
 
     // لون جديد كل 15 مثلثًا (خطوة 45 درجة على دائرة الألوان)
     const level = Math.floor(player.score / CFG.colorEvery);
-    const hueT = store.road === 'auto' ? 185 + level * 45 : store.road;
+    const hueT = 185 + level * 45;
     hueC += (hueT - hueC) * Math.min(1, dt * 2.4);
     rootStyle.setProperty('--c', hsl(hueC, 100, 58));
     rootStyle.setProperty('--cs', hsl(hueC, 100, 58, 0.55));
