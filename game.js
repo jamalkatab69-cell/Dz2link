@@ -32,9 +32,8 @@
   let overReadyAt = 0;
   let menuReset = 0;
   let sparkT = 0;
-  // فيزياء الكرة (بصرية): قفزة بجاذبية حقيقية + ارتداد + انضغاط، ودوران كامل أثناء الجري
-  const ball = { y: 0, vy: 0, sq: 0, sqv: 0, roll: 0, tilt: 0, lastU: 0 };
-  let lastLane = 1;
+  // الكرة ثابتة على الأرض وتدور أثناء الجري (بدون قفز)
+  const ball = { roll: 0, tilt: 0, lastU: 0 };
   let clock = 0;
   const cam = { x: 0, y: CAM.height, z: -CAM.back, psi: 0 };
   const save = (k, v) => localStorage.setItem('abur-' + k, typeof v === 'string' ? v : JSON.stringify(v));
@@ -54,11 +53,12 @@
 
   // ---------- شخصيات الكرات (من skins.js) ----------
   // كل صورة تُلفّ حول كرة وتدور 360° أثناء الجري
-  const SKINS = (window.CHAR_SKINS || []).map((k) => {
+  const mkSkins = (list, group) => (list || []).map((k) => {
     const img = new Image();
     img.src = k.src;
-    return { ...k, img, tex: null };
+    return { ...k, group, img, tex: null };
   });
+  const SKINS = [...mkSkins(window.CHAR_SKINS, 'شخصيات'), ...mkSkins(window.CLUB_SKINS, 'أندية ومنتخبات')];
   const skinById = (id) => SKINS.find((k) => k.id === id) || null;
 
   // ---------- التحكم: لمسة واحدة تنقل الكرة إلى المسار الآخر ----------
@@ -95,8 +95,7 @@
     particles = [];
     hueC = 185;
     shake = 0;
-    lastLane = player.lane;
-    ball.y = 0; ball.vy = 0; ball.sq = 0; ball.sqv = 0; ball.roll = 0; ball.tilt = 0; ball.lastU = player.u;
+    ball.roll = 0; ball.tilt = 0; ball.lastU = player.u;
     updateCamera(1, true);
   }
 
@@ -179,10 +178,18 @@
   }
 
   function renderSkins(box) {
-    const grid = h('div', 'skins');
-    const list = [{ id: 'neon', name: 'الأصلية', src: null }, ...SKINS];
+    let grid = h('div', 'skins');
+    const list = [{ id: 'neon', name: 'الأصلية', src: null, group: '' }, ...SKINS];
     const cards = [];
+    let grp = '';
+    box.appendChild(grid);
     for (const k of list) {
+      if (k.group !== grp) {                       // عنوان لكل قسم (شخصيات / أندية ومنتخبات)
+        grp = k.group;
+        box.appendChild(h('h3', '', grp));
+        grid = h('div', 'skins');
+        box.appendChild(grid);
+      }
       const b = h('button', 'skin');
       b.type = 'button';
       b.innerHTML = (k.src ? `<img src="${k.src}" alt="">` : '<i class="neon-ball"></i>') + `<span>${k.name}</span>`;
@@ -194,7 +201,6 @@
       b.classList.toggle('on', store.skin === k.id);
       grid.appendChild(b);
     }
-    box.appendChild(grid);
   }
 
   const PANELS = {
@@ -353,7 +359,7 @@
       if (g.got || g.pending) continue;
       if (g.s < sBall - 10) continue;
       if (g.s > sBall + 90) break;
-      proj(g.x, 0.7, g.z);
+      proj(g.x, 0.8, g.z);
       if (pZ < 0.9) continue;
       drawList.push({ z: pZ, x: pX, y: pY, t: 'gem', g });
     }
@@ -365,7 +371,7 @@
     if (player.state !== 'crashed') {
       proj(player.x, 0, player.z);
       const gx = pX, gy = pY;
-      proj(player.x, CFG.ballRadius + ball.y, player.z);
+      proj(player.x, CFG.ballRadius, player.z);
       drawList.push({ z: pZ, x: pX, y: pY, t: 'ball', gx, gy });
     }
     drawList.sort((a, b) => b.z - a.z);
@@ -434,21 +440,20 @@
     ctx.shadowBlur = 0;
   }
 
+  const starImg = new Image();
+  if (window.STAR_SRC) starImg.src = window.STAR_SRC;
+  if (window.STAR_SRC) document.documentElement.style.setProperty('--star', `url("${window.STAR_SRC}")`);
+
   function drawGem(d, g) {
-    const bob = (Math.sin(clock * 3 + g.s) * 0.08 * F) / d.z;
-    const gx = d.x, gy = d.y + bob;
-    const r = (0.3 * F) / d.z;
-    const squash = 0.25 + 0.75 * Math.abs(Math.cos(clock * 2.4 + g.s));
+    if (!(starImg.complete && starImg.naturalWidth)) return;
+    const bob = (Math.sin(clock * 3 + g.s) * 0.1 * F) / d.z;
+    const r = (0.5 * F) / d.z;
+    const pulse = 1 + 0.06 * Math.sin(clock * 5 + g.s);
     ctx.globalAlpha = fogAt(d.z);
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = (Math.PI / 3) * i + Math.PI / 6;
-      const x = gx + Math.cos(a) * r * squash, y = gy + Math.sin(a) * r;
-      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-    }
-    ctx.closePath();
-    ctx.fill();
+    ctx.shadowColor = '#ffc400';
+    ctx.shadowBlur = 14 * DPR;
+    ctx.drawImage(starImg, d.x - r * pulse, d.y + bob - r * pulse, r * 2 * pulse, r * 2 * pulse);
+    ctx.shadowBlur = 0;
   }
 
   function drawParticle(d, p) {
@@ -465,33 +470,9 @@
     ctx.fill();
   }
 
-  // ---------- الكرة: فيزياء + كرة مغلّفة بصورة ----------
-  const BALL = { g: 28, bounce: 0.35 };
-
+  // ---------- الكرة: ثابتة على الأرض، تدور أثناء الجري ----------
   function updateBall(dt) {
     const f = Math.max(1, player.v / CFG.speedStart);   // عامل السرعة
-    const g = BALL.g * f;
-    if (player.lane !== lastLane) {
-      lastLane = player.lane;
-      // قفزة زمنها = زمن عبور المسار، فالارتفاع g·T²/8 يبقى ثابتًا مهما زادت السرعة
-      ball.vy = (g * (0.42 / Math.sqrt(f))) / 2;
-      ball.sq = -0.14; ball.sqv = 0;                    // تمدّد لحظة الانطلاق
-    }
-    const n = 4, hh = dt / n;
-    for (let i = 0; i < n; i++) {
-      ball.vy -= g * hh;
-      ball.y += ball.vy * hh;
-      if (ball.y <= 0) {
-        ball.y = 0;
-        const impact = -ball.vy / Math.sqrt(f);
-        if (impact > 0.7) {
-          ball.sq = Math.min(0.3, impact * 0.05); ball.sqv = 0;   // انضغاط عند الهبوط
-          ball.vy = -ball.vy * BALL.bounce;                          // ارتداد
-        } else ball.vy = 0;
-      }
-      ball.sqv += (-260 * ball.sq - 14 * ball.sqv) * hh;           // نابض الانضغاط
-      ball.sq += ball.sqv * hh;
-    }
     // الدوران: دورة كاملة تقريبًا كل ثانية، وميل خفيف مع الحركة الجانبية
     ball.roll += Math.min(16, 6.5 * Math.sqrt(f)) * dt;
     const lv = (player.u - ball.lastU) / Math.max(dt, 1e-4) / f;
@@ -559,18 +540,13 @@
     const r = (CFG.ballRadius * F) / bz;
     ctx.globalAlpha = 1;
 
-    // ظل متوهج على الأرض يصغر ويخفت كلما ارتفعت الكرة
-    const lift = Math.min(1, ball.y / 0.8);
-    ctx.fillStyle = hsl(h, 100, 60, 0.38 * (1 - lift * 0.7));
+    // ظل متوهج على الأرض
+    ctx.fillStyle = hsl(h, 100, 60, 0.38);
     ctx.beginPath();
-    ctx.ellipse(d.gx, d.gy, r * (1 - lift * 0.35), r * 0.34 * (1 - lift * 0.35), 0, 0, Math.PI * 2);
+    ctx.ellipse(d.gx, d.gy, r, r * 0.34, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // انضغاط/تمدّد حول نقطة التماس مع الأرض
     ctx.save();
-    ctx.translate(bx, by + r);
-    ctx.scale(1 + ball.sq * 0.6, 1 - ball.sq);
-    ctx.translate(-bx, -(by + r));
 
     const skin = skinById(store.skin);
     const tex = skin && getTex(skin);
