@@ -15,7 +15,8 @@
     halfWidth: 1.5,       // نصف عرض الطريق (كل مسار عرضه 1.5)
     laneOffset: 0.75,     // بعد مركز كل مسار عن منتصف الطريق
     laneSmooth: 13,       // سرعة الانتقال بين المسارين
-    ballRadius: 0.4,
+    ballRadius: 0.75,     // نصف الطريق (عرض الطريق 3) — للرسم
+    hitRadius: 0.5,       // نصف قطر الاصطدام
     speedStart: 9,
     speedGrow: 0.2,       // كل دفعة تضاف 0.2× إلى السرعة (تراكميًا، بلا سقف)
     speedEvery: 15,       // الدفعة تتكرر كل 15 مثلثًا
@@ -178,7 +179,7 @@
     for (let i = p.oi; i < w.obs.length; i++) {
       const o = w.obs[i];
       if (o.s > p.s + 8) break;
-      if (Math.hypot(p.x - o.x, p.z - o.z) < CFG.spikeRadius + CFG.ballRadius * 0.85) {
+      if (Math.hypot(p.x - o.x, p.z - o.z) < CFG.spikeRadius + CFG.hitRadius) {
         p.state = 'crashed';
         events.push('crash');
         return;
@@ -197,7 +198,7 @@
       const gm = w.gems[i];
       if (gm.got || gm.pending) continue;
       if (gm.s > p.s + 8) break;
-      if (Math.hypot(p.x - gm.x, p.z - gm.z) < 0.85) {
+      if (Math.hypot(p.x - gm.x, p.z - gm.z) < 1.0) {
         gm.got = true;
         p.gems++;
         events.push('gem');
