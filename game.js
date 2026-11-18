@@ -34,10 +34,40 @@
   let sparkT = 0;
   let clock = 0;
   const cam = { x: 0, y: CAM.height, z: -CAM.back, psi: 0 };
+  const save = (k, v) => localStorage.setItem('abur-' + k, typeof v === 'string' ? v : JSON.stringify(v));
+  const load = (k, d) => { try { const v = localStorage.getItem('abur-' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } };
   const store = {
     best: Number(localStorage.getItem('abur-best')) || 0,
-    gems: Number(localStorage.getItem('abur-gems')) || 0
+    gems: Number(localStorage.getItem('abur-gems')) || 0,
+    skin: localStorage.getItem('abur-skin') || 'neon',   // neon = الكرة الأصلية
+    road: load('road', 'auto'),                          // auto = يتغير اللون كل 15 مثلثًا
+    vib: load('vib', true),
+    top: load('top', [])
   };
+
+  // روابط مواقع التواصل — غيّر الروابط هنا (أضف أي موقع آخر بنفس الشكل)
+  const LINKS = [
+    { name: 'تيليغرام', url: 'https://t.me/', icon: 'tg' }
+  ];
+
+  // ألوان الطرق
+  const ROADS = [
+    { id: 'auto', name: 'تلقائي', hue: null },
+    { id: 185, name: 'سماوي', hue: 185 },
+    { id: 320, name: 'وردي', hue: 320 },
+    { id: 130, name: 'أخضر', hue: 130 },
+    { id: 45, name: 'ذهبي', hue: 45 },
+    { id: 0, name: 'أحمر', hue: 0 },
+    { id: 270, name: 'بنفسجي', hue: 270 }
+  ];
+
+  // ---------- صور الكرات (من skins.js) ----------
+  const SKINS = (window.BALL_SKINS || []).map((k) => {
+    const img = new Image();
+    img.src = k.src;
+    return { ...k, img };
+  });
+  const skinById = (id) => SKINS.find((k) => k.id === id) || null;
 
   // ---------- التحكم: لمسة واحدة تنقل الكرة إلى المسار الآخر ----------
   const debug = { auto: false };
@@ -49,6 +79,7 @@
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
+    if (!$('modal').hidden) { if (e.key === 'Escape') closeModal(); return; }
     if ((e.key === ' ' || e.key === 'Enter') && mode !== 'play') { pressStart(); return; }
     if (mode !== 'play') return;
     if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') E.switchLane(player, -1);
@@ -84,6 +115,8 @@
     gemsEl.hidden = false;
     scoreEl.textContent = '0';
     gemsEl.textContent = String(store.gems);
+    $('dock').hidden = true;
+    closeModal();
   }
 
   function showMenu() {
@@ -94,6 +127,11 @@
     gemsEl.hidden = true;
     $('screenOver').hidden = true;
     $('screenStart').hidden = false;
+    $('dock').hidden = false;
+    refreshBest();
+  }
+
+  function refreshBest() {
     $('bestStart').textContent = store.best ? `أفضل نتيجة: ${store.best}` : '';
   }
 
@@ -113,6 +151,8 @@
     const isBest = n > store.best;
     if (isBest) { store.best = n; localStorage.setItem('abur-best', String(n)); }
     localStorage.setItem('abur-gems', String(store.gems));
+    if (n > 0) { store.top.push(n); store.top.sort((a, b) => b - a); store.top = store.top.slice(0, 10); save('top', store.top); }
+    $('dock').hidden = false;
     $('verdict').textContent = isBest && n > 0 ? 'رقم قياسي جديد!' : verdictFor(n);
     $('final').textContent = String(n);
     $('bestOver').textContent = `الأفضل: ${store.best}`;
@@ -122,6 +162,121 @@
     $('screenOver').hidden = false;
     overReadyAt = clock + 0.7;
   }
+
+  // ---------- الأزرار السفلية واللوحات ----------
+  const ICONS = {
+    tg: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#2AABEE"/><path fill="#fff" d="M5.43 11.87c3.5-1.52 5.83-2.53 7-3.02 3.33-1.39 4.02-1.63 4.47-1.64.1 0 .32.02.46.14.12.1.16.23.17.33.02.1.04.31.02.48-.18 1.9-.96 6.5-1.36 8.62-.17.9-.5 1.2-.82 1.23-.7.06-1.23-.46-1.9-.9-1.06-.69-1.65-1.12-2.68-1.8-1.19-.78-.42-1.21.26-1.91.18-.18 3.25-2.98 3.31-3.23.01-.03.01-.15-.06-.21-.07-.06-.17-.04-.25-.02-.11.02-1.8 1.14-5.09 3.36-.48.33-.92.49-1.31.48-.43-.01-1.26-.24-1.88-.44-.76-.25-1.36-.38-1.31-.8.03-.22.33-.45.9-.69z"/></svg>'
+  };
+  document.querySelectorAll('#dock [data-icon="tg"]').forEach((el) => { el.innerHTML = ICONS.tg; });
+
+  const modal = $('modal');
+  const mBody = $('mBody');
+  function closeModal() { modal.hidden = true; }
+  modal.addEventListener('pointerdown', (e) => e.stopPropagation());
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  $('mClose').addEventListener('click', closeModal);
+  $('dock').addEventListener('pointerdown', (e) => e.stopPropagation());
+
+  function h(tag, cls, html) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html !== undefined) e.innerHTML = html;
+    return e;
+  }
+
+  function renderSkins(box) {
+    const grid = h('div', 'skins');
+    const list = [{ id: 'neon', name: 'الأصلية', hue: 185, src: null }, ...SKINS];
+    const cards = [];
+    for (const k of list) {
+      const b = h('button', 'skin');
+      b.type = 'button';
+      b.innerHTML = (k.src ? `<img src="${k.src}" alt="">` : '<i class="neon-ball"></i>') + `<span>${k.name}</span>`;
+      b.addEventListener('click', () => {
+        store.skin = k.id; localStorage.setItem('abur-skin', k.id);
+        cards.forEach((c) => c[0].classList.toggle('on', c[1] === k.id));
+      });
+      cards.push([b, k.id]);
+      b.classList.toggle('on', store.skin === k.id);
+      grid.appendChild(b);
+    }
+    box.appendChild(grid);
+  }
+
+  function renderRoads(box) {
+    const grid = h('div', 'roads');
+    const cards = [];
+    for (const r of ROADS) {
+      const b = h('button', 'road');
+      b.type = 'button';
+      const sw = r.hue === null ? 'conic-gradient(from 0deg, #0ff, #f0f, #ff0, #0f0, #0ff)' : `hsl(${r.hue} 100% 58%)`;
+      b.innerHTML = `<i style="background:${sw}"></i><span>${r.name}</span>`;
+      b.addEventListener('click', () => {
+        store.road = r.id; save('road', r.id);
+        if (r.hue !== null) hueC = r.hue;
+        cards.forEach((c) => c[0].classList.toggle('on', c[1] === r.id));
+      });
+      cards.push([b, r.id]);
+      b.classList.toggle('on', store.road === r.id);
+      grid.appendChild(b);
+    }
+    box.appendChild(grid);
+  }
+
+  const PANELS = {
+    account: { title: 'الحساب', render(box) {
+      box.appendChild(h('div', 'stats', `<div><b>${store.best}</b><span>أفضل نتيجة</span></div><div><b>${store.gems}</b><span>الجواهر</span></div>`));
+      const b = h('button', 'btn', '<svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg><span>تسجيل الدخول بحساب Google</span>');
+      const note = h('p', 'note');
+      b.addEventListener('click', () => { note.textContent = 'تسجيل الدخول غير مفعّل بعد: يحتاج ربطه بمعرّف عميل (Client ID) من Google Cloud.'; });
+      box.appendChild(b); box.appendChild(note);
+    } },
+    top: { title: 'المتصدرون', render(box) {
+      if (!store.top.length) { box.appendChild(h('p', 'note', 'لا توجد نتائج بعد. العب جولة لتظهر هنا.')); return; }
+      const ol = h('ol', 'board');
+      store.top.forEach((n) => ol.appendChild(h('li', '', `<b>${n}</b><span>مثلثًا</span>`)));
+      box.appendChild(ol);
+      box.appendChild(h('p', 'note', 'هذه أفضل نتائجك على هذا الجهاز. الترتيب العالمي يحتاج خادمًا.'));
+    } },
+    balls: { title: 'الكرات', render(box) { renderSkins(box); } },
+    roads: { title: 'الطرقات', render(box) { renderRoads(box); } },
+    social: { title: 'مواقع التواصل', render(box) {
+      for (const l of LINKS) {
+        const a = h('a', 'btn', `${ICONS[l.icon] || ''}<span>${l.name}</span>`);
+        a.href = l.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        box.appendChild(a);
+      }
+    } },
+    settings: { title: 'الإعدادات', render(box) {
+      box.appendChild(h('h3', '', 'شكل الكرة'));
+      renderSkins(box);
+      box.appendChild(h('h3', '', 'لون الطريق'));
+      renderRoads(box);
+      const row = h('label', 'row', '<span>الاهتزاز عند الاصطدام</span><input type="checkbox" class="sw">');
+      const cb = row.querySelector('input'); cb.checked = !!store.vib;
+      cb.addEventListener('change', () => { store.vib = cb.checked; save('vib', cb.checked); });
+      box.appendChild(row);
+      const rs = h('button', 'btn danger', 'مسح النتائج والجواهر');
+      let armed = false;
+      rs.addEventListener('click', () => {
+        if (!armed) { armed = true; rs.textContent = 'اضغط مرة أخرى للتأكيد'; return; }
+        store.best = 0; store.gems = 0; store.top = [];
+        ['best', 'gems', 'top'].forEach((k) => localStorage.removeItem('abur-' + k));
+        refreshBest(); armed = false; rs.textContent = 'تم المسح';
+      });
+      box.appendChild(rs);
+    } }
+  };
+
+  document.querySelectorAll('#dock [data-panel]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const pn = PANELS[btn.dataset.panel];
+      $('mTitle').textContent = pn.title;
+      mBody.innerHTML = '';
+      pn.render(mBody);
+      modal.hidden = false;
+    });
+  });
 
   // ---------- المقاسات ----------
   function resize() {
@@ -342,6 +497,14 @@
     if (!(pZ > 0.3)) return;
     const r = (CFG.ballRadius * F) / pZ;
     ctx.globalAlpha = 1;
+    const skin = skinById(store.skin);
+    if (skin && skin.img.complete && skin.img.naturalWidth) {
+      ctx.shadowColor = hsl(skin.hue, 100, 58);
+      ctx.shadowBlur = 26 * DPR;
+      ctx.drawImage(skin.img, pX - r, pY - r, r * 2, r * 2);
+      ctx.shadowBlur = 0;
+      return;
+    }
     ctx.shadowColor = hsl(h, 100, 55);
     ctx.shadowBlur = 34 * DPR;
     ctx.fillStyle = hsl(h, 100, 56);
@@ -410,7 +573,7 @@
       } else if (ev === 'crash') {
         burst(player.x, 0.5, player.z, 46, hueC, 7);
         shake = 0.5;
-        if (navigator.vibrate) navigator.vibrate(90);
+        if (store.vib && navigator.vibrate) navigator.vibrate(90);
         overTimer = 0.65;
       }
     }
@@ -453,7 +616,7 @@
 
     // لون جديد كل 15 مثلثًا (خطوة 45 درجة على دائرة الألوان)
     const level = Math.floor(player.score / CFG.colorEvery);
-    const hueT = 185 + level * 45;
+    const hueT = store.road === 'auto' ? 185 + level * 45 : store.road;
     hueC += (hueT - hueC) * Math.min(1, dt * 2.4);
     rootStyle.setProperty('--c', hsl(hueC, 100, 58));
     rootStyle.setProperty('--cs', hsl(hueC, 100, 58, 0.55));
